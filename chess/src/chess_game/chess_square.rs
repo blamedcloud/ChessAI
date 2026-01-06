@@ -5,12 +5,12 @@ pub struct ChessSquare {
     id: SquareID,
     color: SquareColor,
     piece: Option<ChessPiece>,
-    //seen_by: [u8; 2], // how many of each players pieces see this square
+    seen_by: [u8; 2], // how many of each players pieces see this square
 }
 
 impl ChessSquare {
     // returns the state of the i-th square at the start of a chess game.
-    // starts from a1 (0), up to h8 (63)
+    // starts from a1 (0), b1 (1), ..., up to h8 (63)
     pub fn initial(i: usize) -> Self {
         let id: SquareID = i.into();
         let color: SquareColor = id.into();
@@ -33,12 +33,39 @@ impl ChessSquare {
             },
             _ => None,
         };
-        Self { id, color, piece }
+        let seen_by = match id {
+            SquareID(file, Rank::One) => match file {
+                File::A | File::H => [0, 0],
+                _ => [1, 0],
+            },
+            SquareID(file, Rank::Two) => match file {
+                File::D | File::E => [4, 0],
+                _ => [1, 0],
+            },
+            SquareID(file, Rank::Three) => match file {
+                File::C | File::F => [3, 0],
+                _ => [2, 0]
+            },
+            SquareID(file, Rank::Eight) => match file {
+                File::A | File::H => [0, 0],
+                _ => [0, 1],
+            },
+            SquareID(file, Rank::Seven) => match file {
+                File::D | File::E => [0, 4],
+                _ => [0, 1],
+            },
+            SquareID(file, Rank::Six) => match file {
+                File::C | File::F => [0, 3],
+                _ => [0, 2]
+            },
+            _ => [0, 0]
+        };
+        Self { id, color, piece, seen_by }
     }
 
-    pub fn new(id: SquareID, piece: Option<ChessPiece>) -> Self {
+    pub fn new(id: SquareID, piece: Option<ChessPiece>, seen: [u8; 2]) -> Self {
         let color = id.into();
-        Self { id, color, piece }
+        Self { id, color, piece , seen_by: seen }
     }
 }
 

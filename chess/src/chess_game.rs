@@ -2,7 +2,7 @@ use crate::chess_game::chess_square::{ChessSquare, SquareID};
 
 pub mod chess_square;
 pub mod chess_piece;
-
+pub mod chess_move;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Player {
@@ -17,7 +17,7 @@ pub enum Result {
     Draw,
 }
 
-pub struct ChessGame {
+pub struct ChessGameState {
     board: [ChessSquare; 64],
     active_player: Player,
     result: Option<Result>,
@@ -26,7 +26,7 @@ pub struct ChessGame {
     turn_num: usize,
 }
 
-impl ChessGame {
+impl ChessGameState {
     pub fn new() -> Self {
         let board : [ChessSquare; 64] = std::array::from_fn(|i| ChessSquare::initial(i));
         Self {
