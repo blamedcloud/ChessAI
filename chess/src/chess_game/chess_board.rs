@@ -27,6 +27,16 @@ impl ChessBoard {
         &mut self.board[index]
     }
 
+    pub fn get_king_sq(&self, player: Player) -> &ChessSquare {
+        //TODO: cache this value
+        for i in 0..64 {
+            if self.board[i].get_piece().is_some_and(|p| p.get_name() == PieceName::King && p.get_owner() == player) {
+                return &self.board[i];
+            }
+        }
+        panic!("No king square found");
+    }
+
     pub fn iter(&'_ self) -> Iter<'_, ChessSquare> {
         self.board.iter()
     }

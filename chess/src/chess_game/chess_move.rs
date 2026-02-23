@@ -33,3 +33,25 @@ impl AnnotatedMove {
         Self { chess_move, annotation }
     }
 }
+
+pub struct MoveList {
+    moves: Vec<AnnotatedMove>,
+}
+
+impl MoveList {
+    pub fn new() -> Self {
+        Self { moves: Vec::new() }
+    }
+
+    pub fn add_move(&mut self, ann_move: AnnotatedMove) {
+        self.moves.push(ann_move);
+    }
+
+    pub fn has_move(&self, ann_move: AnnotatedMove) -> bool {
+        self.moves.contains(&ann_move)
+    }
+
+    pub fn len(&self) -> usize {
+        self.moves.len()
+    }
+}

@@ -1,5 +1,5 @@
 use crate::chess_game::chess_board::ChessBoard;
-use crate::chess_game::chess_move::{AnnotatedMove, Annotation, ChessMove};
+use crate::chess_game::chess_move::{AnnotatedMove, Annotation, ChessMove, MoveList};
 use crate::chess_game::chess_piece::{ChessPiece, PieceName};
 use crate::chess_game::chess_square::{ChessSquare, File, Rank, SquareID, SquareOffset};
 
@@ -24,16 +24,18 @@ impl Player {
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum Result {
+pub enum GameResult {
     WhiteWin,
     BlackWin,
     Draw,
 }
 
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct ChessGameState {
     board: ChessBoard,
     active_player: Player,
-    result: Option<Result>,
+    result: Option<GameResult>,
     ep_square: Option<SquareID>,
     draw_clock: usize,
     turn_num: usize,
@@ -59,7 +61,7 @@ impl ChessGameState {
         self.active_player
     }
 
-    pub fn result(&self) -> Option<Result> {
+    pub fn result(&self) -> Option<GameResult> {
         self.result
     }
 
@@ -169,11 +171,11 @@ impl ChessGameState {
         match annotated_move.annotation {
             Annotation::CheckMate => {
                 match self.active_player {
-                    Player::White => self.result = Some(Result::WhiteWin),
-                    Player::Black => self.result = Some(Result::BlackWin),
+                    Player::White => self.result = Some(GameResult::WhiteWin),
+                    Player::Black => self.result = Some(GameResult::BlackWin),
                 };
             },
-            Annotation::Draw => self.result = Some(Result::Draw),
+            Annotation::Draw => self.result = Some(GameResult::Draw),
             _ => {},
         }
         if self.active_player == Player::Black {
@@ -181,23 +183,58 @@ impl ChessGameState {
         }
 
         if self.result == None && self.draw_clock >= 50 {
-            self.result = Some(Result::Draw);
+            self.result = Some(GameResult::Draw);
         }
 
         self.board.make_move(annotated_move.chess_move, self.active_player);
         self.active_player = self.active_player.opponent();
     }
 
-    pub fn get_legal_moves(&self) -> Vec<ChessMove> {
-        // need to account for check/checkmate
-        self.get_all_moves()
-        //TODO
+    pub fn get_legal_moves(&self) -> MoveList {
+        let mut move_list = MoveList::new();
+        let opponent = self.active_player.opponent();
+        let all_moves = self.get_all_moves();
+        for m in all_moves {
+            let my_copy = {
+                let mut my_copy = self.clone();
+                my_copy.make_move(AnnotatedMove::new(m, Annotation::None));
+                my_copy
+            };
+            let king_sq = my_copy.board.get_king_sq(self.active_player);
+            if king_sq.not_seen_by(opponent) {
+                // move is legal
+                let is_check = my_copy.board.get_king_sq(opponent).is_seen_by(self.active_player);
+                let has_legal_move = my_copy.has_legal_moves();
+                let annotation = match (is_check, has_legal_move) {
+                    (true, true) => Annotation::Check,
+                    (true, false) => Annotation::CheckMate,
+                    (false, true) => Annotation::None,
+                    (false, false) => Annotation::Draw,
+                };
+                move_list.add_move(AnnotatedMove::new(m, annotation));
+            }
+        }
+        move_list
+    }
+
+    fn has_legal_moves(&self) -> bool {
+        let opponent = self.active_player.opponent();
+        let all_moves = self.get_all_moves();
+        for m in all_moves {
+            let my_copy = {
+                let mut my_copy = self.clone();
+                my_copy.make_move(AnnotatedMove::new(m, Annotation::None));
+                my_copy
+            };
+            let king_sq = my_copy.board.get_king_sq(self.active_player);
+            if king_sq.not_seen_by(opponent) {
+                return true;
+            }
+        }
+        false
     }
 
     fn get_all_moves(&self) -> Vec<ChessMove> {
-        if self.result.is_some() {
-            return Vec::new();
-        }
         let mut moves = Vec::new();
 
         for square in self.board.iter() {
@@ -378,7 +415,7 @@ impl ChessGameState {
 mod tests {
     use crate::chess_game::chess_move::{AnnotatedMove, Annotation, ChessMove};
     use crate::chess_game::chess_square::{File, Rank, SquareID};
-    use crate::chess_game::{ChessGameState, Player};
+    use crate::chess_game::{ChessGameState, GameResult, Player};
 
     fn show() -> bool {
         true
@@ -439,6 +476,86 @@ mod tests {
         let moves = game.get_legal_moves();
         assert_eq!(moves.len(), 27);
         assert_eq!(game.board().square_by_id(SquareID(File::E, Rank::Five)).get_seen(), [1, 1]);
+
+        if show() {
+            println!("{}", game.board);
+        }
+    }
+
+    #[test]
+    fn scholars_mate() {
+        let mut game = ChessGameState::new();
+        let moves = game.get_legal_moves();
+        let e4 = AnnotatedMove::new(ChessMove::Move(SquareID(File::E, Rank::Two), SquareID(File::E, Rank::Four)), Annotation::None);
+        assert!(moves.has_move(e4));
+        game.make_move(e4);
+
+        let moves = game.get_legal_moves();
+        let e5 = AnnotatedMove::new(ChessMove::Move(SquareID(File::E, Rank::Seven), SquareID(File::E, Rank::Five)), Annotation::None);
+        assert!(moves.has_move(e5));
+        game.make_move(e5);
+
+        let moves = game.get_legal_moves();
+        let bc4 = AnnotatedMove::new(ChessMove::Move(SquareID(File::F, Rank::One), SquareID(File::C, Rank::Four)), Annotation::None);
+        assert!(moves.has_move(bc4));
+        game.make_move(bc4);
+
+        let moves = game.get_legal_moves();
+        let bc5 = AnnotatedMove::new(ChessMove::Move(SquareID(File::F, Rank::Eight), SquareID(File::C, Rank::Five)), Annotation::None);
+        assert!(moves.has_move(bc5));
+        game.make_move(bc5);
+
+        let moves = game.get_legal_moves();
+        let qf3 = AnnotatedMove::new(ChessMove::Move(SquareID(File::D, Rank::One), SquareID(File::F, Rank::Three)), Annotation::None);
+        assert!(moves.has_move(qf3));
+        game.make_move(qf3);
+
+        let moves = game.get_legal_moves();
+        let nc6 = AnnotatedMove::new(ChessMove::Move(SquareID(File::B, Rank::Eight), SquareID(File::C, Rank::Six)), Annotation::None);
+        assert!(moves.has_move(nc6));
+        game.make_move(nc6);
+
+        let moves = game.get_legal_moves();
+        let bf7 = AnnotatedMove::new(ChessMove::Capture(SquareID(File::C, Rank::Four), SquareID(File::F, Rank::Seven)), Annotation::Check);
+        assert!(moves.has_move(bf7));
+        let qf7 = AnnotatedMove::new(ChessMove::Capture(SquareID(File::F, Rank::Three), SquareID(File::F, Rank::Seven)), Annotation::CheckMate);
+        assert!(moves.has_move(qf7));
+        game.make_move(qf7);
+
+        assert!(game.result().is_some_and(|r| r == GameResult::WhiteWin));
+        assert_eq!(game.get_fen(), "r1bqk1nr/pppp1Qpp/2n5/2b1p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
+
+        if show() {
+            println!("{}", game.board);
+        }
+    }
+
+    #[test]
+    fn mate_in_2() {
+        let mut game = ChessGameState::new();
+
+        let moves = game.get_legal_moves();
+        let f3 = AnnotatedMove::new(ChessMove::Move(SquareID(File::F, Rank::Two), SquareID(File::F, Rank::Three)), Annotation::None);
+        assert!(moves.has_move(f3));
+        game.make_move(f3);
+
+        let moves = game.get_legal_moves();
+        let e5 = AnnotatedMove::new(ChessMove::Move(SquareID(File::E, Rank::Seven), SquareID(File::E, Rank::Five)), Annotation::None);
+        assert!(moves.has_move(e5));
+        game.make_move(e5);
+
+        let moves = game.get_legal_moves();
+        let g4 = AnnotatedMove::new(ChessMove::Move(SquareID(File::G, Rank::Two), SquareID(File::G, Rank::Four)), Annotation::None);
+        assert!(moves.has_move(g4));
+        game.make_move(g4);
+
+        let moves = game.get_legal_moves();
+        let qh4 = AnnotatedMove::new(ChessMove::Move(SquareID(File::D, Rank::Eight), SquareID(File::H, Rank::Four)), Annotation::CheckMate);
+        assert!(moves.has_move(qh4));
+        game.make_move(qh4);
+
+        assert!(game.result().is_some_and(|r| r == GameResult::BlackWin));
+        assert_eq!(game.get_fen(), "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
 
         if show() {
             println!("{}", game.board);
