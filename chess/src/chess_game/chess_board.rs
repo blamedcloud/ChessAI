@@ -1,6 +1,9 @@
 use std::fmt::{Display, Formatter};
 use std::slice::Iter;
-use crate::chess_game::chess_square::{ChessSquare, SquareID};
+use crate::chess_game::chess_move::ChessMove;
+use crate::chess_game::chess_piece::ChessPiece;
+use crate::chess_game::chess_square::{ChessSquare, File, Rank, SquareID};
+use crate::chess_game::Player;
 
 pub struct ChessBoard {
     board: [ChessSquare; 64],
@@ -18,8 +21,110 @@ impl ChessBoard {
         &self.board[index]
     }
 
+    fn square_by_id_mut(&mut self, id: SquareID) -> &mut ChessSquare {
+        let index: usize = id.into();
+        &mut self.board[index]
+    }
+
     pub fn iter(&'_ self) -> Iter<'_, ChessSquare> {
         self.board.iter()
+    }
+
+    pub fn make_move(&mut self, chess_move: ChessMove, player: Player) {
+        match chess_move {
+            ChessMove::Move(id, target_id) | ChessMove::Capture(id, target_id)=> {
+                let sq = self.square_by_id_mut(id);
+                let mut piece = sq.get_piece().unwrap();
+                sq.clear_piece();
+                let target_sq = self.square_by_id_mut(target_id);
+                piece.set_moved(true);
+                target_sq.set_piece(piece);
+            },
+            ChessMove::EnPassant(id, target_id) => {
+                let sq = self.square_by_id_mut(id);
+                let piece = sq.get_piece().unwrap();
+                sq.clear_piece();
+                let target_sq = self.square_by_id_mut(target_id);
+                target_sq.set_piece(piece);
+                let ep_id = SquareID(target_id.file(), id.rank());
+                let ep_sq = self.square_by_id_mut(ep_id);
+                ep_sq.clear_piece();
+            },
+            ChessMove::ShortCastle => {
+                let rank = match player {
+                    Player::White => Rank::One,
+                    Player::Black => Rank::Eight,
+                };
+                let king_id = SquareID(File::E, rank);
+                let king_sq = self.square_by_id_mut(king_id);
+                let mut king = king_sq.get_piece().unwrap();
+                king.set_moved(true);
+                king_sq.clear_piece();
+                let new_king_id = SquareID(File::G, rank);
+                let new_king_sq = self.square_by_id_mut(new_king_id);
+                new_king_sq.set_piece(king);
+
+                let rook_id = SquareID(File::H, rank);
+                let rook_sq = self.square_by_id_mut(rook_id);
+                let mut rook = rook_sq.get_piece().unwrap();
+                rook.set_moved(true);
+                rook_sq.clear_piece();
+                let new_rook_id = SquareID(File::F, rank);
+                let new_rook_sq = self.square_by_id_mut(new_rook_id);
+                new_rook_sq.set_piece(rook);
+            },
+            ChessMove::LongCastle => {
+                let rank = match player {
+                    Player::White => Rank::One,
+                    Player::Black => Rank::Eight,
+                };
+                let king_id = SquareID(File::E, rank);
+                let king_sq = self.square_by_id_mut(king_id);
+                let mut king = king_sq.get_piece().unwrap();
+                king.set_moved(true);
+                king_sq.clear_piece();
+                let new_king_id = SquareID(File::C, rank);
+                let new_king_sq = self.square_by_id_mut(new_king_id);
+                new_king_sq.set_piece(king);
+
+                let rook_id = SquareID(File::A, rank);
+                let rook_sq = self.square_by_id_mut(rook_id);
+                let mut rook = rook_sq.get_piece().unwrap();
+                rook.set_moved(true);
+                rook_sq.clear_piece();
+                let new_rook_id = SquareID(File::D, rank);
+                let new_rook_sq = self.square_by_id_mut(new_rook_id);
+                new_rook_sq.set_piece(rook);
+            },
+            ChessMove::Promotion(target_id, piece_name) => {
+                let id = match player {
+                    Player::White => SquareID(target_id.file(), Rank::Seven),
+                    Player::Black => SquareID(target_id.file(), Rank::Two),
+                };
+                let sq = self.square_by_id_mut(id);
+                sq.clear_piece();
+                let target_sq = self.square_by_id_mut(target_id);
+                target_sq.set_piece(ChessPiece::new(player, piece_name, true));
+            },
+            ChessMove::CapturePromotion(id, target_id, piece_name) => {
+                let sq = self.square_by_id_mut(id);
+                sq.clear_piece();
+                let target_sq = self.square_by_id_mut(target_id);
+                target_sq.set_piece(ChessPiece::new(player, piece_name, true));
+            }
+        }
+        self.clear_seen();
+        self.calc_seen();
+    }
+
+    fn clear_seen(&mut self) {
+        for sq in self.board.iter_mut() {
+            sq.clear_seen();
+        }
+    }
+
+    fn calc_seen(&mut self) {
+        todo!()
     }
 }
 

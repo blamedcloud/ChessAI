@@ -82,6 +82,14 @@ impl ChessSquare {
         self.piece
     }
 
+    pub fn clear_piece(&mut self) {
+        self.piece = None;
+    }
+
+    pub fn set_piece(&mut self, piece: ChessPiece) {
+        self.piece = Some(piece);
+    }
+
     pub fn get_seen(&self) -> [u8; 2] {
         self.seen_by
     }
@@ -98,6 +106,14 @@ impl ChessSquare {
             Player::White => self.seen_by[0] == 0,
             Player::Black => self.seen_by[1] == 0,
         }
+    }
+
+    pub fn clear_seen(&mut self) {
+        self.seen_by = [0, 0];
+    }
+
+    pub fn add_seen(&mut self, seen: [u8; 2]) {
+        self.seen_by = [self.seen_by[0] + seen[0], self.seen_by[1] + seen[1]];
     }
 }
 

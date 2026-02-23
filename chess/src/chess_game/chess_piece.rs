@@ -29,6 +29,10 @@ impl ChessPiece {
     pub fn not_moved(&self) -> bool {
         !self._moved
     }
+
+    pub fn set_moved(&mut self, moved: bool) {
+        self._moved = moved;
+    }
 }
 
 impl Display for ChessPiece {
