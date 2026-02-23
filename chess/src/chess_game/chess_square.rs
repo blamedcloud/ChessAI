@@ -1,6 +1,8 @@
+use std::fmt::{Display, Formatter};
 use crate::chess_game::chess_piece::{ChessPiece, PieceName};
 use crate::chess_game::Player;
 
+#[derive(Debug, Copy, Clone)]
 pub struct ChessSquare {
     id: SquareID,
     color: SquareColor,
@@ -67,15 +69,77 @@ impl ChessSquare {
         let color = id.into();
         Self { id, color, piece , seen_by: seen }
     }
+
+    pub fn get_id(&self) -> SquareID {
+        self.id
+    }
+
+    pub fn get_color(&self) -> SquareColor {
+        self.color
+    }
+
+    pub fn get_piece(&self) -> Option<ChessPiece> {
+        self.piece
+    }
+
+    pub fn get_seen(&self) -> [u8; 2] {
+        self.seen_by
+    }
+
+    pub fn is_seen_by(&self, player: Player) -> bool {
+        match player {
+            Player::White => self.seen_by[0] > 0,
+            Player::Black => self.seen_by[1] > 0,
+        }
+    }
+
+    pub fn not_seen_by(&self, player: Player) -> bool {
+        match player {
+            Player::White => self.seen_by[0] == 0,
+            Player::Black => self.seen_by[1] == 0,
+        }
+    }
+}
+
+impl Display for ChessSquare {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.piece.is_some() {
+            self.piece.unwrap().fmt(f)?;
+        } else {
+            match self.color {
+                SquareColor::Light => write!(f, " ")?,
+                SquareColor::Dark => write!(f, "_")?,
+            };
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct SquareID(File, Rank);
+pub struct SquareID(pub File, pub Rank);
 
 impl SquareID {
-    pub fn file(self) -> File { self.0 }
-    pub fn rank(self) -> Rank { self.1 }
+    pub fn file(&self) -> File { self.0 }
+    pub fn rank(&self) -> Rank { self.1 }
+
+    pub fn add_offset(&self, offset: SquareOffset) -> Option<SquareID> {
+        let fu: usize = self.0.into();
+        let ru: usize = self.1.into();
+        let fi: isize = fu as isize;
+        let ri: isize = ru as isize;
+        let new_f = fi + offset.0;
+        let new_r = ri + offset.1;
+        if new_f >= 0 && new_f < 8 && new_r >= 0 && new_r < 8 {
+            Some(SquareID((new_f as usize).into(), (new_r as usize).into()))
+        } else {
+            None
+        }
+    }
 }
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct SquareOffset(pub isize, pub isize);
+
 
 impl From<usize> for SquareID {
     fn from(value: usize) -> Self {
@@ -84,6 +148,14 @@ impl From<usize> for SquareID {
         let file = v % 8;
         let rank = v / 8;
         SquareID(file.into(), rank.into())
+    }
+}
+
+impl From<SquareID> for usize {
+    fn from(value: SquareID) -> usize {
+        let file: usize = value.0.into();
+        let rank: usize = value.1.into();
+        rank * 8 + file
     }
 }
 

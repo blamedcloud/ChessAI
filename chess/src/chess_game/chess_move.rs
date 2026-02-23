@@ -1,4 +1,4 @@
-use crate::chess_game::chess_piece::{ChessPiece, PieceName};
+use crate::chess_game::chess_piece::PieceName;
 use crate::chess_game::chess_square::SquareID;
 
 
@@ -6,9 +6,18 @@ use crate::chess_game::chess_square::SquareID;
 pub enum ChessMove {
     Move(SquareID, SquareID),
     Capture(SquareID, SquareID),
+    EnPassant(SquareID, SquareID),
     ShortCastle,
     LongCastle,
     Promotion(SquareID, PieceName),
     CapturePromotion(SquareID, SquareID, PieceName),
 }
 
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum Annotation {
+    None,
+    Check,
+    CheckMate,
+    Draw,
+}
