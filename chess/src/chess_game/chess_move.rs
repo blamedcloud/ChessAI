@@ -21,3 +21,15 @@ pub enum Annotation {
     CheckMate,
     Draw,
 }
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct AnnotatedMove {
+    pub chess_move: ChessMove,
+    pub annotation: Annotation,
+}
+
+impl AnnotatedMove {
+    pub fn new(chess_move: ChessMove, annotation: Annotation) -> Self {
+        Self { chess_move, annotation }
+    }
+}

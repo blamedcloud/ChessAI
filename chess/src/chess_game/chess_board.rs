@@ -1,10 +1,11 @@
 use std::fmt::{Display, Formatter};
 use std::slice::Iter;
 use crate::chess_game::chess_move::ChessMove;
-use crate::chess_game::chess_piece::ChessPiece;
-use crate::chess_game::chess_square::{ChessSquare, File, Rank, SquareID};
+use crate::chess_game::chess_piece::{ChessPiece, PieceName};
+use crate::chess_game::chess_square::{ChessSquare, File, Rank, SquareID, SquareOffset};
 use crate::chess_game::Player;
 
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct ChessBoard {
     board: [ChessSquare; 64],
 }
@@ -113,7 +114,6 @@ impl ChessBoard {
                 target_sq.set_piece(ChessPiece::new(player, piece_name, true));
             }
         }
-        self.clear_seen();
         self.calc_seen();
     }
 
@@ -124,7 +124,91 @@ impl ChessBoard {
     }
 
     fn calc_seen(&mut self) {
-        todo!()
+        self.clear_seen();
+        for index in 0..64 {
+            let sq = self.board[index];
+            if let Some(piece) = sq.get_piece() {
+                let id = sq.get_id();
+                let player = piece.get_owner();
+                match piece.get_name() {
+                    PieceName::Pawn => self.pawn_seen(id, player),
+                    PieceName::Knight => self.knight_seen(id, player),
+                    PieceName::Bishop => self.bishop_seen(id, player),
+                    PieceName::Rook => self.rook_seen(id, player),
+                    PieceName::Queen => self.queen_seen(id, player),
+                    PieceName::King => self.king_seen(id, player),
+                }
+            }
+        }
+    }
+
+    fn pawn_seen(&mut self, id: SquareID, player: Player) {
+        let forward_offset = match player {
+            Player::White => SquareOffset(0, 1),
+            Player::Black => SquareOffset(0, -1),
+        };
+        let offsets = [SquareOffset(-1, 0) + forward_offset, SquareOffset(1, 0) + forward_offset];
+        for offset in &offsets {
+            if let Some(target) = id.add_offset(*offset) {
+                self.square_by_id_mut(target).add_seen_by(player, 1);
+            }
+        }
+    }
+
+    fn knight_seen(&mut self, id: SquareID, player: Player) {
+        let offsets = PieceName::knight_offsets();
+        for offset in offsets {
+            if let Some(target) = id.add_offset(offset) {
+                self.square_by_id_mut(target).add_seen_by(player, 1);
+            }
+        }
+    }
+
+    fn los_seen<F>(&mut self, id: SquareID, player: Player, f: F)
+    where
+        F: Fn(isize) -> SquareOffset
+    {
+        for i in 1..8 {
+            let offset = f(i);
+            if let Some(target) = id.add_offset(offset) {
+                let sq = self.square_by_id_mut(target);
+                sq.add_seen_by(player, 1);
+                if sq.get_piece().is_some() {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn bishop_seen(&mut self, id: SquareID, player: Player) {
+        self.los_seen(id, player, |i| SquareOffset(-i, -i));
+        self.los_seen(id, player, |i| SquareOffset(-i, i));
+        self.los_seen(id, player, |i| SquareOffset(i, -i));
+        self.los_seen(id, player, |i| SquareOffset(i, i));
+    }
+
+    fn rook_seen(&mut self, id: SquareID, player: Player) {
+        self.los_seen(id, player, |i| SquareOffset(-i, 0));
+        self.los_seen(id, player, |i| SquareOffset(i, 0));
+        self.los_seen(id, player, |i| SquareOffset(0, -i));
+        self.los_seen(id, player, |i| SquareOffset(0, i));
+    }
+
+    fn queen_seen(&mut self, id: SquareID, player: Player) {
+        // a queen can move like a bishop or rook
+        self.bishop_seen(id, player);
+        self.rook_seen(id, player);
+    }
+
+    fn king_seen(&mut self, id: SquareID, player: Player) {
+        let offsets = PieceName::king_offsets();
+        for offset in offsets {
+            if let Some(target) = id.add_offset(offset) {
+                self.square_by_id_mut(target).add_seen_by(player, 1);
+            }
+        }
     }
 }
 
@@ -145,14 +229,21 @@ impl Display for ChessBoard {
 #[cfg(test)]
 mod tests {
     use crate::chess_game::chess_board::ChessBoard;
+    use crate::chess_game::chess_move::ChessMove;
     use crate::chess_game::chess_piece::PieceName;
     use crate::chess_game::chess_square::{File, Rank, SquareColor, SquareID};
     use crate::chess_game::Player;
 
+    fn show() -> bool {
+        false
+    }
+
     #[test]
     fn test_new_board() {
         let board = ChessBoard::new();
-        println!("board: \n{}", board);
+        if show() {
+            println!("board: \n{}", board);
+        }
 
         let a1 = &board.board[0];
         assert_eq!(a1.get_id(), SquareID(File::A, Rank::One));
@@ -185,5 +276,24 @@ mod tests {
         let h8_piece = h8.get_piece().unwrap();
         assert_eq!(h8_piece.get_owner(), Player::Black);
         assert_eq!(h8_piece.get_name(), PieceName::Rook);
+    }
+
+    #[test]
+    fn test_initial_seen() {
+        let start = ChessBoard::new();
+
+        let mut board = ChessBoard::new();
+        let n_sq = SquareID(File::B, Rank::One);
+        let target = SquareID(File::C, Rank::Three);
+        board.make_move(ChessMove::Move(n_sq, target), Player::White);
+
+        if show() {
+            println!("board: \n{}", board);
+        }
+        assert_ne!(start, board);
+
+        board.make_move(ChessMove::Move(target, n_sq), Player::White);
+
+        assert_eq!(start, board);
     }
 }

@@ -1,5 +1,5 @@
 use crate::chess_game::chess_board::ChessBoard;
-use crate::chess_game::chess_move::ChessMove;
+use crate::chess_game::chess_move::{AnnotatedMove, Annotation, ChessMove};
 use crate::chess_game::chess_piece::{ChessPiece, PieceName};
 use crate::chess_game::chess_square::{ChessSquare, File, Rank, SquareID, SquareOffset};
 
@@ -51,9 +51,147 @@ impl ChessGameState {
         }
     }
 
+    pub fn board(&self) -> &ChessBoard {
+        &self.board
+    }
+
+    pub fn active_player(&self) -> Player {
+        self.active_player
+    }
+
+    pub fn result(&self) -> Option<Result> {
+        self.result
+    }
+
+    pub fn turn(&self) -> usize {
+        self.turn_num
+    }
+
+    pub fn get_fen(&self) -> String {
+        let mut fen = String::new();
+        for r in (0..8).rev() {
+            fen += self.get_rank_fen(r.into()).as_str();
+            if r != 0 {
+                fen += "/";
+            }
+        }
+        match self.active_player {
+            Player::White => fen += " w ",
+            Player::Black => fen += " b ",
+        };
+        fen += self.get_castling_fen().as_str();
+        fen += " ";
+        match self.ep_square {
+            None => fen += "-",
+            Some(ep_square) => fen += &ep_square.to_str(),
+        }
+        fen += " ";
+        fen += self.draw_clock.to_string().as_str();
+        fen += " ";
+        fen += self.turn_num.to_string().as_str();
+        fen
+    }
+
+    fn get_rank_fen(&self, rank: Rank) -> String {
+        let mut rank_fen = String::new();
+        let mut empty_sq = 0;
+        for f in 0..8 {
+            let sq = self.board.square_by_id(SquareID(f.into(), rank));
+            if let Some(piece) = sq.get_piece() {
+                if empty_sq > 0 {
+                    rank_fen += empty_sq.to_string().as_str();
+                    empty_sq = 0;
+                }
+                rank_fen += piece.to_string().as_str();
+            } else {
+                empty_sq += 1;
+            }
+        }
+        if empty_sq > 0 {
+            rank_fen += empty_sq.to_string().as_str();
+        }
+        rank_fen
+    }
+
+    fn get_castling_fen(&self) -> String {
+        let mut castling_fen = String::new();
+        let w_king = self.castling_valid(SquareID(File::E, Rank::One), PieceName::King);
+        let wk_rook = self.castling_valid(SquareID(File::H, Rank::One), PieceName::Rook);
+        if w_king && wk_rook {
+            castling_fen += "K";
+        }
+        let wq_rook = self.castling_valid(SquareID(File::A, Rank::One), PieceName::Rook);
+        if w_king && wq_rook {
+            castling_fen += "Q";
+        }
+
+        let b_king = self.castling_valid(SquareID(File::E, Rank::Eight), PieceName::King);
+        let bk_rook = self.castling_valid(SquareID(File::H, Rank::Eight), PieceName::Rook);
+        if b_king && bk_rook {
+            castling_fen += "k";
+        }
+        let bq_rook = self.castling_valid(SquareID(File::A, Rank::Eight), PieceName::Rook);
+        if b_king && bq_rook {
+            castling_fen += "q";
+        }
+        castling_fen
+    }
+
+    fn castling_valid(&self, id: SquareID, name: PieceName) -> bool {
+        self.board.square_by_id(id).get_piece().is_some_and(|p| p.get_name() == name && p.not_moved())
+    }
+
+    pub fn make_move(&mut self, annotated_move: AnnotatedMove) {
+        self.ep_square = None;
+        match annotated_move.chess_move {
+            ChessMove::Move(id, target) => {
+                if self.board.square_by_id(id).get_piece().is_some_and(|p| p.get_name() == PieceName::Pawn) {
+                    self.draw_clock = 0;
+                    // handle ep square
+                    let offset = id.calc_offset(target);
+                    if offset.file() == 0 && offset.rank().abs() == 2 {
+                        let ep_offset = SquareOffset(0, offset.rank() / 2);
+                        let ep_sq = id.add_offset(ep_offset).unwrap();
+                        self.ep_square = Some(ep_sq);
+                    }
+                } else {
+                    self.draw_clock += 1;
+                }
+            },
+            ChessMove::Capture(_, _) => self.draw_clock = 0,
+            ChessMove::EnPassant(_, _) => self.draw_clock = 0,
+            ChessMove::ShortCastle => self.draw_clock += 1,
+            ChessMove::LongCastle => self.draw_clock += 1,
+            ChessMove::Promotion(_, _) => self.draw_clock = 0,
+            ChessMove::CapturePromotion(_, _, _) => self.draw_clock = 0,
+        }
+
+        match annotated_move.annotation {
+            Annotation::CheckMate => {
+                match self.active_player {
+                    Player::White => self.result = Some(Result::WhiteWin),
+                    Player::Black => self.result = Some(Result::BlackWin),
+                };
+            },
+            Annotation::Draw => self.result = Some(Result::Draw),
+            _ => {},
+        }
+        if self.active_player == Player::Black {
+            self.turn_num += 1;
+        }
+
+        if self.result == None && self.draw_clock >= 50 {
+            self.result = Some(Result::Draw);
+        }
+
+        self.board.make_move(annotated_move.chess_move, self.active_player);
+        self.active_player = self.active_player.opponent();
+    }
+
     pub fn get_legal_moves(&self) -> Vec<ChessMove> {
         // need to account for check/checkmate
         self.get_all_moves()
+        //TODO
     }
 
     fn get_all_moves(&self) -> Vec<ChessMove> {
@@ -129,7 +267,7 @@ impl ChessGameState {
 
     fn add_knight_moves(&self, sq: &ChessSquare, moves: &mut Vec<ChessMove>) {
         let id = sq.get_id();
-        let offsets = [SquareOffset(-2,-1), SquareOffset(-2,1), SquareOffset(-1,-2), SquareOffset(-1,2), SquareOffset(1,-2), SquareOffset(1, 2), SquareOffset(2,-1), SquareOffset(2, 1)];
+        let offsets = PieceName::knight_offsets();
         for offset in offsets.into_iter() {
             let offset_sq = id.add_offset(offset);
             if let Some(target) = offset_sq {
@@ -143,67 +281,14 @@ impl ChessGameState {
         }
     }
 
-    fn add_bishop_moves(&self, sq: &ChessSquare, moves: &mut Vec<ChessMove>) {
+    fn add_los_moves<F>(&self, sq: &ChessSquare, moves: &mut Vec<ChessMove>, f: F)
+    where
+        F: Fn(isize) -> SquareOffset
+    {
         let id = sq.get_id();
-        // left-down (-file, -rank)
         for i in 1..8 {
-            let offset = SquareOffset(-i, -i);
-            let offset_sq = id.add_offset(offset);
-            if let Some(target) = offset_sq {
-                let target_sq = self.board.square_by_id(target);
-                if target_sq.get_piece().is_none() {
-                    moves.push(ChessMove::Move(id, target));
-                } else {
-                    if target_sq.get_piece().unwrap().get_owner() != self.active_player {
-                        moves.push(ChessMove::Capture(id, target));
-                    }
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // left-up (-file, +rank)
-        for i in 1..8 {
-            let offset = SquareOffset(-i, i);
-            let offset_sq = id.add_offset(offset);
-            if let Some(target) = offset_sq {
-                let target_sq = self.board.square_by_id(target);
-                if target_sq.get_piece().is_none() {
-                    moves.push(ChessMove::Move(id, target));
-                } else {
-                    if target_sq.get_piece().unwrap().get_owner() != self.active_player {
-                        moves.push(ChessMove::Capture(id, target));
-                    }
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // right-down (+file, -rank)
-        for i in 1..8 {
-            let offset = SquareOffset(i, -i);
-            let offset_sq = id.add_offset(offset);
-            if let Some(target) = offset_sq {
-                let target_sq = self.board.square_by_id(target);
-                if target_sq.get_piece().is_none() {
-                    moves.push(ChessMove::Move(id, target));
-                } else {
-                    if target_sq.get_piece().unwrap().get_owner() != self.active_player {
-                        moves.push(ChessMove::Capture(id, target));
-                    }
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // right-up (+file, +rank)
-        for i in 1..8 {
-            let offset = SquareOffset(i, i);
-            let offset_sq = id.add_offset(offset);
-            if let Some(target) = offset_sq {
+            let offset = f(i);
+            if let Some(target) = id.add_offset(offset) {
                 let target_sq = self.board.square_by_id(target);
                 if target_sq.get_piece().is_none() {
                     moves.push(ChessMove::Move(id, target));
@@ -219,80 +304,18 @@ impl ChessGameState {
         }
     }
 
+    fn add_bishop_moves(&self, sq: &ChessSquare, moves: &mut Vec<ChessMove>) {
+        self.add_los_moves(sq, moves, |i| SquareOffset(-i, -i));
+        self.add_los_moves(sq, moves, |i| SquareOffset(-i, i));
+        self.add_los_moves(sq, moves, |i| SquareOffset(i, -i));
+        self.add_los_moves(sq, moves, |i| SquareOffset(i, i));
+    }
+
     fn add_rook_moves(&self, sq: &ChessSquare, moves: &mut Vec<ChessMove>) {
-        let id = sq.get_id();
-        // left (-file)
-        for i in 1..8 {
-            let offset = SquareOffset(-i, 0);
-            let offset_sq = id.add_offset(offset);
-            if let Some(target) = offset_sq {
-                let target_sq = self.board.square_by_id(target);
-                if target_sq.get_piece().is_none() {
-                    moves.push(ChessMove::Move(id, target));
-                } else {
-                    if target_sq.get_piece().unwrap().get_owner() != self.active_player {
-                        moves.push(ChessMove::Capture(id, target));
-                    }
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // right (+file)
-        for i in 1..8 {
-            let offset = SquareOffset(i, 0);
-            let offset_sq = id.add_offset(offset);
-            if let Some(target) = offset_sq {
-                let target_sq = self.board.square_by_id(target);
-                if target_sq.get_piece().is_none() {
-                    moves.push(ChessMove::Move(id, target));
-                } else {
-                    if target_sq.get_piece().unwrap().get_owner() != self.active_player {
-                        moves.push(ChessMove::Capture(id, target));
-                    }
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // down (-rank)
-        for i in 1..8 {
-            let offset = SquareOffset(0, -i);
-            let offset_sq = id.add_offset(offset);
-            if let Some(target) = offset_sq {
-                let target_sq = self.board.square_by_id(target);
-                if target_sq.get_piece().is_none() {
-                    moves.push(ChessMove::Move(id, target));
-                } else {
-                    if target_sq.get_piece().unwrap().get_owner() != self.active_player {
-                        moves.push(ChessMove::Capture(id, target));
-                    }
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // up (+rank)
-        for i in 1..8 {
-            let offset = SquareOffset(0, i);
-            let offset_sq = id.add_offset(offset);
-            if let Some(target) = offset_sq {
-                let target_sq = self.board.square_by_id(target);
-                if target_sq.get_piece().is_none() {
-                    moves.push(ChessMove::Move(id, target));
-                } else {
-                    if target_sq.get_piece().unwrap().get_owner() != self.active_player {
-                        moves.push(ChessMove::Capture(id, target));
-                    }
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
+        self.add_los_moves(sq, moves, |i| SquareOffset(-i, 0));
+        self.add_los_moves(sq, moves, |i| SquareOffset(i, 0));
+        self.add_los_moves(sq, moves, |i| SquareOffset(0, -i));
+        self.add_los_moves(sq, moves, |i| SquareOffset(0, i));
     }
 
     fn add_queen_moves(&self, sq: &ChessSquare, moves: &mut Vec<ChessMove>) {
@@ -305,7 +328,7 @@ impl ChessGameState {
         let id = sq.get_id();
         let opponent = self.active_player.opponent();
         // standard moves
-        let offsets = [SquareOffset(-1,-1), SquareOffset(-1,0), SquareOffset(-1,1), SquareOffset(0,-1), SquareOffset(0,1), SquareOffset(1, -1), SquareOffset(1,0), SquareOffset(1, 1)];
+        let offsets = PieceName::king_offsets();
         for offset in offsets.into_iter() {
             let offset_sq = id.add_offset(offset);
             if let Some(target) = offset_sq {
@@ -353,12 +376,72 @@ impl ChessGameState {
 
 #[cfg(test)]
 mod tests {
-    use crate::chess_game::ChessGameState;
+    use crate::chess_game::chess_move::{AnnotatedMove, Annotation, ChessMove};
+    use crate::chess_game::chess_square::{File, Rank, SquareID};
+    use crate::chess_game::{ChessGameState, Player};
+
+    fn show() -> bool {
+        true
+    }
+
+    #[test]
+    fn test_fen() {
+        let mut game = ChessGameState::new();
+        let fen = game.get_fen();
+        assert_eq!(fen, String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"));
+        // pawn to e4
+        game.make_move(AnnotatedMove::new(ChessMove::Move(SquareID(File::E, Rank::Two), SquareID(File::E, Rank::Four)), Annotation::None));
+        let fen = game.get_fen();
+        assert_eq!(fen, String::from("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"));
+        // pawn to c5
+        game.make_move(AnnotatedMove::new(ChessMove::Move(SquareID(File::C, Rank::Seven), SquareID(File::C, Rank::Five)), Annotation::None));
+        let fen = game.get_fen();
+        assert_eq!(fen, String::from("rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2"));
+        // Nf3
+        game.make_move(AnnotatedMove::new(ChessMove::Move(SquareID(File::G, Rank::One), SquareID(File::F, Rank::Three)), Annotation::None));
+        let fen = game.get_fen();
+        assert_eq!(fen, String::from("rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2"));
+
+    }
 
     #[test]
     fn initial_moves() {
         let game = ChessGameState::new();
         let moves = game.get_legal_moves();
         assert_eq!(moves.len(), 20);
+    }
+
+    #[test]
+    fn basic_opening() {
+        let mut game = ChessGameState::new();
+        game.make_move(AnnotatedMove::new(ChessMove::Move(SquareID(File::E, Rank::Two), SquareID(File::E, Rank::Four)), Annotation::None));
+        assert_eq!(game.active_player, Player::Black);
+        assert_eq!(game.turn(), 1);
+        let moves = game.get_legal_moves();
+        assert_eq!(moves.len(), 20);
+
+        game.make_move(AnnotatedMove::new(ChessMove::Move(SquareID(File::E, Rank::Seven), SquareID(File::E, Rank::Five)), Annotation::None));
+        assert_eq!(game.active_player, Player::White);
+        assert_eq!(game.turn(), 2);
+        let moves = game.get_legal_moves();
+        assert_eq!(moves.len(), 29);
+
+        game.make_move(AnnotatedMove::new(ChessMove::Move(SquareID(File::G, Rank::One), SquareID(File::F, Rank::Three)), Annotation::None));
+        assert_eq!(game.active_player, Player::Black);
+        assert_eq!(game.turn(), 2);
+        let moves = game.get_legal_moves();
+        assert_eq!(moves.len(), 29);
+        assert_eq!(game.board().square_by_id(SquareID(File::E, Rank::Five)).get_seen(), [1, 0]);
+
+        game.make_move(AnnotatedMove::new(ChessMove::Move(SquareID(File::B, Rank::Eight), SquareID(File::C, Rank::Six)), Annotation::None));
+        assert_eq!(game.active_player, Player::White);
+        assert_eq!(game.turn(), 3);
+        let moves = game.get_legal_moves();
+        assert_eq!(moves.len(), 27);
+        assert_eq!(game.board().square_by_id(SquareID(File::E, Rank::Five)).get_seen(), [1, 1]);
+
+        if show() {
+            println!("{}", game.board);
+        }
     }
 }

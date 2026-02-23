@@ -1,8 +1,9 @@
 use std::fmt::{Display, Formatter};
+use std::ops::{Add, Sub};
 use crate::chess_game::chess_piece::{ChessPiece, PieceName};
 use crate::chess_game::Player;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct ChessSquare {
     id: SquareID,
     color: SquareColor,
@@ -115,6 +116,13 @@ impl ChessSquare {
     pub fn add_seen(&mut self, seen: [u8; 2]) {
         self.seen_by = [self.seen_by[0] + seen[0], self.seen_by[1] + seen[1]];
     }
+
+    pub fn add_seen_by(&mut self, player: Player, seen: u8) {
+        match player {
+            Player::White => self.seen_by[0] += seen,
+            Player::Black => self.seen_by[1] += seen,
+        }
+    }
 }
 
 impl Display for ChessSquare {
@@ -138,6 +146,30 @@ impl SquareID {
     pub fn file(&self) -> File { self.0 }
     pub fn rank(&self) -> Rank { self.1 }
 
+    pub fn to_str(&self) -> String {
+        let file: String = match self.file() {
+            File::A => "a",
+            File::B => "b",
+            File::C => "c",
+            File::D => "d",
+            File::E => "e",
+            File::F => "f",
+            File::G => "g",
+            File::H => "h",
+        }.to_string();
+        let rank: &str = match self.rank() {
+            Rank::One => "1",
+            Rank::Two => "2",
+            Rank::Three => "3",
+            Rank::Four => "4",
+            Rank::Five => "5",
+            Rank::Six => "6",
+            Rank::Seven => "7",
+            Rank::Eight => "8",
+        };
+        file + rank
+    }
+
     pub fn add_offset(&self, offset: SquareOffset) -> Option<SquareID> {
         let fu: usize = self.0.into();
         let ru: usize = self.1.into();
@@ -151,11 +183,44 @@ impl SquareID {
             None
         }
     }
+
+    pub fn calc_offset(&self, other: SquareID) -> SquareOffset {
+        let my_offset: SquareOffset = (*self).into();
+        let other_offset: SquareOffset = other.into();
+        other_offset - my_offset
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct SquareOffset(pub isize, pub isize);
 
+impl SquareOffset {
+    pub fn file(&self) -> isize { self.0 }
+    pub fn rank(&self) -> isize { self.1 }
+}
+
+
+impl Add<SquareOffset> for SquareOffset {
+    type Output = SquareOffset;
+    fn add(self, rhs: SquareOffset) -> Self::Output {
+        SquareOffset(self.0 + rhs.0, self.1 + rhs.1)
+    }
+}
+
+impl Sub<SquareOffset> for SquareOffset {
+    type Output = SquareOffset;
+    fn sub(self, rhs: SquareOffset) -> Self::Output {
+        SquareOffset(self.0 - rhs.0, self.1 - rhs.1)
+    }
+}
+
+impl From<SquareID> for SquareOffset {
+    fn from(id: SquareID) -> Self {
+        let fu: usize = id.file().into();
+        let ru: usize = id.rank().into();
+        SquareOffset(fu as isize, ru as isize)
+    }
+}
 
 impl From<usize> for SquareID {
     fn from(value: usize) -> Self {
@@ -278,5 +343,19 @@ impl From<SquareID> for SquareColor {
             1 => Self::Light,
             _ => unreachable!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::chess_game::chess_square::{File, Rank, SquareID};
+
+    #[test]
+    fn id_string() {
+        let id = SquareID(File::E, Rank::One);
+        assert_eq!(id.to_str(), "e1");
+
+        let id = SquareID(File::C, Rank::Four);
+        assert_eq!(id.to_str(), "c4");
     }
 }
